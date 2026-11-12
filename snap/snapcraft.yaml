@@ -1,0 +1,147 @@
+name: zettlr
+base: core26
+version: '4.9.0'
+title: Zettlr
+icon: snap/gui/zettlr.png
+summary: Markdown editor and publication workbench for academic writing
+description: |
+  Zettlr is a Markdown editor for researchers, students, journalists and
+  authors. It combines a focused editor with Zettelkasten links and tags,
+  citations from Zotero, JabRef or any CSL JSON or BibTeX library, projects,
+  snippets, full-text search and spell checking.
+
+  The bundled Pandoc imports and exports HTML, Word, OpenDocument, LaTeX,
+  reveal.js and other formats. The Simple PDF profile exports PDF files
+  without further software; the XeLaTeX PDF profile needs a TeX
+  distribution, which the snap does not include.
+
+  Launch Zettlr from the application menu or run zettlr. It opens files in
+  your home directory. To use removable media (/media, /mnt), run:
+
+     sudo snap connect zettlr:removable-media
+
+  Updates are managed by snapd.
+license: GPL-3.0-only
+grade: stable
+confinement: strict
+website: https://www.zettlr.com
+source-code:
+  - https://github.com/Zettlr/Zettlr
+  - https://github.com/sidalit/zettlr-snap
+issues:
+  - https://github.com/Zettlr/Zettlr/issues
+  - https://github.com/sidalit/zettlr-snap/issues
+contact: https://github.com/sidalit/zettlr-snap/issues
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  zettlr:
+    command: bin/zettlr
+    extensions: [gnome]
+    plugs:
+      - audio-playback
+      - browser-support
+      - home
+      - network
+      - removable-media
+    environment:
+      # On KDE Plasma Electron would call kioclient, which the snap lacks.
+      ELECTRON_TRASH: gio
+
+parts:
+  yarn:
+    plugin: nil
+    build-snaps:
+      - node/22/stable
+    override-build: |
+      npm install --global --prefix "$CRAFT_PART_INSTALL" corepack@0.36.0
+    prime:
+      - -*
+
+  # The release scripts/get-pandoc.sh downloads; bump the version and both checksums together.
+  pandoc:
+    plugin: dump
+    source:
+      - to amd64: https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-linux-amd64.tar.gz
+      - to arm64: https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-linux-arm64.tar.gz
+    source-checksum:
+      - to amd64: sha256/d0c90410e90204c9ca83b8539fac5c7aed01fd537207e4585849f8abc5df20b8
+      - to arm64: sha256/445d96fd08801fe636cab1158b4f017ee320ac3b7446328b4fe2f902117b19b9
+    build-packages:
+      - ca-certificates
+      - curl
+    override-build: |
+      craftctl default
+      # The release archive has no license file.
+      version=$("$CRAFT_PART_INSTALL/bin/pandoc" --version | sed -n '1s/^pandoc //p')
+      doc="$CRAFT_PART_INSTALL/share/doc/pandoc"
+      install -d "$doc"
+      for file in COPYING.md COPYRIGHT; do
+        curl --fail --location --retry 3 \
+          "https://raw.githubusercontent.com/jgm/pandoc/$version/$file" -o "$doc/$file"
+      done
+    stage:
+      - bin/pandoc
+      - share/doc/pandoc
+
+  zettlr:
+    after: [pandoc, yarn]
+    plugin: nil
+    source: https://github.com/Zettlr/Zettlr.git
+    source-tag: v$SNAPCRAFT_PROJECT_VERSION
+    source-depth: 1
+    build-snaps:
+      - node/22/stable
+    build-packages:
+      - build-essential
+      - ca-certificates
+      - git
+      - patch
+      - python3
+    build-environment:
+      - COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+      - NODE_OPTIONS: --max-old-space-size=3072
+      - ZETTLR_DISABLE_UPDATE_CHECK: '1'
+      - BUNDLE_PANDOC: '0'
+    override-pull: |
+      craftctl default
+      patch -p1 < "$CRAFT_PROJECT_DIR/snap/patches/strict-desktop.patch"
+    override-build: |
+      export PATH="$CRAFT_STAGE/bin:$PATH"
+
+      wanted=$(sed -n 's/^VERSION="\(.*\)"$/\1/p' scripts/get-pandoc.sh)
+      staged=$(pandoc --version | sed -n '1s/^pandoc //p')
+      if [ "$wanted" != "$staged" ]; then
+        echo "Upstream bundles Pandoc $wanted; the pandoc part provides $staged." >&2
+        # Upstream HEAD may be ahead of the release that the pandoc part follows.
+        case "$SNAPCRAFT_PROJECT_VERSION" in
+          git-*) ;;
+          *) exit 1 ;;
+        esac
+      fi
+
+      yarn install --immutable
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64) target=x64 ;;
+        arm64) target=arm ;;
+      esac
+      yarn "package:linux-$target"
+      output=$(echo out/Zettlr-linux-*)
+      if [ ! -x "$output/Zettlr" ]; then
+        echo "Electron Forge produced no application in out/." >&2
+        exit 1
+      fi
+
+      mkdir -p "$CRAFT_PART_INSTALL/opt/zettlr"
+      cp -a "$output/." "$CRAFT_PART_INSTALL/opt/zettlr/"
+      # Electron Packager creates its output directory with mode 0700.
+      chmod 755 "$CRAFT_PART_INSTALL/opt/zettlr"
+      rm "$CRAFT_PART_INSTALL/opt/zettlr/chrome-sandbox"
+      install -Dm644 LICENSE "$CRAFT_PART_INSTALL/share/doc/zettlr/LICENSE"
+
+  launcher:
+    plugin: dump
+    source: snap/local

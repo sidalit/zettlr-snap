@@ -1,0 +1,15 @@
+--- a/source/app/util/environment-check.ts
++++ b/source/app/util/environment-check.ts
+@@ -36,7 +36,11 @@
+   // This is necessary on macOS and Linux, because GUI applications may not
+   // inherit the same PATH environment variable as terminal programs. This is
+   // necessary, however, to detect additional helper programs, such as quarto.
+-  fixPath()
++  // The snap's PATH holds its Pandoc and gio; a login shell's PATH can drop
++  // them and cannot add host programs.
++  if (process.env.SNAP === undefined) {
++    fixPath()
++  }
+ 
+   /**
+    * Required directories that must exist on the system in order for certain

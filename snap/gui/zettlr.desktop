@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Zettlr
+GenericName=Markdown Editor
+Comment=Your one-stop publication workbench
+Exec=zettlr %F
+Icon=${SNAP}/meta/gui/zettlr.png
+Terminal=false
+Categories=Office;Education;Science;
+Keywords=markdown;writing;notes;zettelkasten;citations;pandoc;
+MimeType=text/markdown;application/x-tex;application/json;application/yaml;
+StartupNotify=true
+StartupWMClass=zettlr

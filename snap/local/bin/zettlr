@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+
+# Keep Zettlr's folder across revisions; the GNOME extension's files stay in place.
+data="$SNAP_USER_COMMON/.config/Zettlr"
+link="$XDG_CONFIG_HOME/Zettlr"
+mkdir -p "$data"
+if [[ -L $link || ! -e $link ]]; then
+    ln -sfn "$data" "$link"
+fi
+
+# Exported files and the tray icon must be readable outside the snap's private /tmp.
+export TMPDIR="$XDG_RUNTIME_DIR"
+
+# browser-support does not allow Chromium's sandbox; AppArmor confines the snap.
+exec "$SNAP/opt/zettlr/Zettlr" --no-sandbox "$@"
